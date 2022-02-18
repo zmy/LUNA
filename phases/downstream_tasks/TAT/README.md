@@ -1,3 +1,7 @@
+# Description 
+
+This folder contains codes for the downstream task TAT-QA.
+
 # Data Preparation
 run:
 ```
@@ -34,13 +38,3 @@ for details, run:
 ```angular2html
 python phases/downstream_tasks/TAT/runner.py --help
 ```
-
-To run on gcr, please add arguments: 
-```
---input_dir data/DownstreamDataset/TAT
---model_dir data/ckpt
---redirect_huggingface_cache 0
---tblog_dir auto (to avoid streammingly write blob container)
-```
-To run on 8 gpus: if you add **"--gradient_accumulation_steps 1"** argument, you will reproduce the result on 4 gpus, but faster. Since logically the same batchsize and steps are used. 
-Otherwise, the default accumulation "2" makes the batchsize twice as large as before and num of steps a half of before. 

@@ -1,11 +1,9 @@
 # Description 
---- 
 
-This folder contains codes for the fine-tuning and evaluation process on TabFact. We test on TaPas. 
+This folder contains codes for the downstream task TabFact.
 
 # Usage
---- 
-1. Prepare the pretrained checkpoint (path referred to as `path/to/your/checkpoint`) 
+1. Prepare the intermediate pre-trained checkpoint (path referred to as `path/to/your/checkpoint`) 
 
 
 2. As a demo to use TransPos on a pretrained TaPas checkpoint, in `TUNA/` run:
@@ -42,12 +40,4 @@ do
     echo "net_$i"
 done
 
-```
-
-To run on gcr, please add arguments:
-```
---data_dir data/DownstreamDataset/huggingface_TabFact
---model_dir data/ckpt
---redirect_huggingface_cache 0
-```
 

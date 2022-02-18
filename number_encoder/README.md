@@ -1,7 +1,6 @@
 # Description
----
 
-The folder `number_encoder/` contains codes that facilitate the process of **num**ber em**bed**ding (numbed). 
+The folder `number_encoder/` contains codes that facilitate the process of **num**ber em**bed**ding (NumBed). 
 
 `config.py` defines the necessary arguments used by the NumBed class.
 
@@ -11,7 +10,6 @@ The folder `number_encoder/` contains codes that facilitate the process of **num
 
 
 # Usage 
----
 
 Use the following Python code block for a quick demo: 
 
