@@ -15,8 +15,7 @@ export MODEL=TransPos
 export SEED=42
 
 # Prepare TabFact data and fine-tune the pretrained checkpoint on TabFact data
-for CUDA_VISIBLE_DEVICES in 0 0,1,2,3
-do
+export CUDA_VISIBLE_DEVICES=0,1,2,3
 python -m phases.downstream_tasks.TabFact.finetune_tabfact \
 --batch_size 48 \
 --encoder $ENCODER \
@@ -25,9 +24,8 @@ python -m phases.downstream_tasks.TabFact.finetune_tabfact \
 --weights_path /storage/tuna-models/$CKPT_PATH \
 --numbed_model_name TransPos \
 --output_dir /storage/tuna-models/tabfact-ckpt/${MODEL}_${SEED}/
-done
 
-# Evaluate on TabFact testset
+# Evaluate on TabFact develop set
 export CUDA_VISIBLE_DEVICES=0
 for i in 9 8 7 6 5 4 3 2 1 0
 do
@@ -35,9 +33,15 @@ do
     --batch_size 12 \
     --ckpt /storage/tuna-models/tabfact-ckpt/${MODEL}_${SEED}/net_$i.pt \
     --encoder $ENCODER \
-    --mode test \
+    --mode valid \
     --numbed_model_name ${MODEL}
     echo "net_$i"
 done
 
-
+# Evaluate on TabFact test set
+python -m phases.downstream_tasks.TabFact.finetune_tabfact \
+--batch_size 12 \
+--ckpt /storage/tuna-models/tabfact-ckpt/${MODEL}_${SEED}/net_$best.pt \
+--encoder $ENCODER \
+--mode test \
+--numbed_model_name ${MODEL}
