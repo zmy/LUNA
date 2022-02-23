@@ -1,0 +1,20 @@
+encoder: roberta
+step_size: 23
+epochs: 4
+batch_size: 1
+gradient_accumulation_steps: 3
+mlm_probability: 0.15
+momentum: 0.995
+alpha: 0.4
+max_seq_length: 512
+numbed_model: CharLSTM_large
+numbed_ckpt: data/ckpt/numbed-ckpt/CharLSTM_large.pt
+
+optimizer: {lr: 3e-5, weight_decay: 0.02}
+schedular: {T_0: 116, T_mult: 2, eta_min: 1e-5}
+warm_up_steps: 667
+
+dataset_dir: [data/PretrainDataset/small]
+
+
+
