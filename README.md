@@ -2,13 +2,13 @@
 
 This anonymous repository contains code for the core models and description for the data used in *LUNA: Language Understanding with Number Augmentations on Transformers via Number Plugins and Pre-training*. 
 
-The folders [number_encoder](number_encoder)  and [number_tokenizer](number_encoder) contain code for **NumBed** and **NumTok** (Sec. 3.1), respectively.
+The folders [number_encoder](number_encoder/README.md)  and [number_tokenizer](number_encoder/README.md) contain code for **NumBed** and **NumTok** (Sec. 3.1), respectively.
 
-The folder [phases/numerical_field](phases/numerical_field) contains codes for number pre-training (Sec. 3.2).
+The folder [phases/numerical_field](phases/numerical_field/README.md) contains codes for number pre-training (Sec. 3.2).
 
-The folder [phases/single_number](phases/single_number) contains codes for the toy task.
+The folder [phases/single_number](phases/single_number/README.md) contains codes for the toy task.
 
-The folder [phases/downstream_tasks](phases/downstream_tasks) contains codes for the downstream tasks (Sec. 4), including [TAT-QA](phases/downstream_tasks/TAT), [TabFact](phases/downstream_tasks/TabFact), and [CrediTrans](phases/downstream_tasks/TabFormer). 
+The folder [phases/downstream_tasks](phases/downstream_tasks) contains codes for the downstream tasks (Sec. 4), including [TAT-QA](phases/downstream_tasks/TAT/README.md), [TabFact](phases/downstream_tasks/TabFact/README.md), and [CrediTrans](phases/downstream_tasks/TabFormer/README.md). 
 
 The folder [phases/empirical_study](phases/empirical_study) contains codes for the empirical studies (Sec. E in appendix), including visualization of attention maps and embeddings from different transformer layers, please rename `attention.ipy123nb` to `attention.ipynb` 
 
