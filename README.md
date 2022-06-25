@@ -13,7 +13,7 @@ The folder [phases/downstream_tasks](phases/downstream_tasks) contains codes for
 The folder [phases/empirical_study](phases/empirical_study) contains codes for the empirical studies (Sec. E in appendix), including visualization of attention maps and embeddings from different transformer layers, please rename `attention.ipy123nb` to `attention.ipynb` 
 
 # Preparation
-unzip the data.zip and put the `data` dir in this repo as `LUNA/data`. 
+unzip the data.zip in supplementary and put the `data` dir in this repo as `LUNA/data`. 
 
 To build docker image, run: 
 ```
