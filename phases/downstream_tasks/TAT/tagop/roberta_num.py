@@ -7,7 +7,7 @@ import torch.nn.functional as F
 from torch_scatter import scatter_max, scatter_mean
 from transformers import RobertaModel
 
-from number_encoder import NumBed, NumBedConfig
+from number_encoder import NumBed, NumBedConfig,SelfAttention_forward
 from .util import FFNLayer
 from .util import get_numbers_from_reduce_sequence, get_span_tokens_from_paragraph, \
     get_span_tokens_from_table, get_single_span_tokens_from_table, get_single_span_tokens_from_paragraph
@@ -25,17 +25,19 @@ class RobertaNum(nn.Module):
                  model_name,
                  checkpoint_path,
                  model_dir,
-                 redirect_huggingface_cache
+                 redirect_huggingface_cache,
+                 use_prompt
                  ):
         super().__init__()
         self.encoder = RobertaModel.from_pretrained(os.path.join(model_dir, "roberta.large"))
         self.encoder.resize_token_embeddings(len(tokenizer))
         self.use_numbed = model_name != 'zero'
         if self.use_numbed:
-            number_model_config = NumBedConfig(model_name=model_name,
+            self.number_model_config = NumBedConfig(model_name=model_name,
                                                encoder_name='RoBERTa',
-                                               checkpoint_path=checkpoint_path)
-            self.numbed = NumBed(number_model_config)
+                                               checkpoint_path=checkpoint_path,
+                                               prompt_layers=None if not use_prompt else 24)
+            self.numbed = NumBed(self.number_model_config)
         # operator predictor
         self.operator_predictor = FFNLayer(hidden_size, hidden_size, len(OPERATOR_CLASSES_), dropout_prob)
         # scale predictor
@@ -51,11 +53,30 @@ class RobertaNum(nn.Module):
         self._metrics = TaTQAEmAndF1()
         self.tokenizer = tokenizer
         self.use_newtag = use_newtag
+        self.use_prompt=use_prompt
+
 
     def _encode(self, input_ids: torch.LongTensor, numtok_dict: Dict, attention_mask: torch.LongTensor,
                 token_type_ids: torch.LongTensor) -> torch.Tensor:
+        origin_forward=[]
         if self.use_numbed:
-            num_embed = self.numbed.embedding(input_ids, numtok_dict, self.tokenizer.num_token_id)
+            if self.use_prompt:
+                num_embed = None
+                if len(numtok_dict) != 0:
+                    attention_mask[input_ids==self.tokenizer.num_token_id]=0
+                    batch_pos_id = torch.where(input_ids == self.tokenizer.num_token_id)[1]
+                    numtok_dict['batch_pos_embed']=self.encoder.embeddings.position_embeddings(batch_pos_id)
+                    num_prompt,prompt_mask = self.numbed.prompting(input_ids, numtok_dict, self.tokenizer.num_token_id)
+                    num_prompt=num_prompt.view(*(num_prompt.size()[:2]),self.number_model_config.prompt_layers,2,-1)
+                    for i in range(len(self.encoder.encoder.layer)):
+                        _self=self.encoder.encoder.layer[i].attention.self
+                        origin_forward.append(_self.forward)
+                        _self.forward = lambda *args,**kwargs: SelfAttention_forward(_self,*args,
+                                                                                      number_prompt=num_prompt[:,:,i],
+                                                                                      number_prompt_mask=prompt_mask,
+                                                                                      **kwargs)
+            else:
+                num_embed = self.numbed.embedding(input_ids, numtok_dict, self.tokenizer.num_token_id)
         else:
             num_embed = None
         txt_embed = self.encoder.embeddings.word_embeddings(input_ids)
@@ -63,11 +84,16 @@ class RobertaNum(nn.Module):
             input_embedding = txt_embed
         else:
             input_embedding = txt_embed + num_embed
-        return self.encoder(
+        ret = self.encoder(
             inputs_embeds=input_embedding,
             attention_mask=attention_mask,
             token_type_ids=token_type_ids,
         )
+        if len(origin_forward)>0:
+            for i in range(len(self.encoder.encoder.layer)):
+                _self = self.encoder.encoder.layer[i].attention.self
+                _self.forward = origin_forward[i]
+        return ret
 
     def develop(self, output_dict, tag_prediction, token_type_ids, input_index, \
                 operator_prediction, scale_prediction, batch_size, paragraph_tokens, \

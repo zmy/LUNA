@@ -1,0 +1,19 @@
+python -m phases.single_number.phase0 \
+--model_name CharLSTM \
+--model_suffix Bi \
+--preprocess_type trivial \
+--mode base_align_with_orig \
+--objs single double multi \
+--evals single double multi \
+--epoch_num 30 \
+--batch_size 256 \
+--lr 1e-3 \
+--dataset_name sampled \
+--listmax_dataset_name sampled \
+--seed 42 \
+--device 0 \
+--exp_root exp \
+--emb_size 768 \
+--hidden_size 128 \
+--lstm_num_layers 1 \
+--align_with_orig

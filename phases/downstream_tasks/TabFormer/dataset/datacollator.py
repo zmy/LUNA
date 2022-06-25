@@ -73,7 +73,11 @@ def numtok_collate_fn(data):
         tokenized_numbers = NumTok.tokenize(tokenized_numbers)
         tokenized_numbers['number_values'] = number_values
 
-        return input_ids, tokenized_numbers
+        return {
+            'input_ids': input_ids,
+            'tokenized_numbers': tokenized_numbers
+        }
+
     except Exception as e:
         # For data with labels.
         input_ids = torch.stack([x[0]['input_ids'] for x in data])
@@ -85,4 +89,8 @@ def numtok_collate_fn(data):
 
         labels = torch.stack([x[1] for x in data])
 
-        return (input_ids, tokenized_numbers), labels
+        return {
+            'input_ids': input_ids,
+            'tokenized_numbers': tokenized_numbers,
+            'labels': labels
+        }

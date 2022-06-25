@@ -13,6 +13,7 @@ class CharLSTM(torch.nn.Module):
                  lstm_num_layers: int = 3,
                  bidirectional: bool = True,
                  preprocess_type: str = 'trivial',
+                 prompt_layers=None,
                  ):
         super(CharLSTM, self).__init__()
         self.model_id = model_id
@@ -26,9 +27,15 @@ class CharLSTM(torch.nn.Module):
             bidirectional=bidirectional,
         )
         self.preprocess = NUM_PROCESS_FUNCS[preprocess_type]
-        self.proj = nn.Linear(hidden_size, out_emb_size)
+        self.prompt_layers=prompt_layers
+        self.out_emb_size=out_emb_size
+        if self.prompt_layers is not None:
+            self.proj = nn.Linear(hidden_size, out_emb_size*self.prompt_layers*2)
+            self.pos_proj = nn.Linear(out_emb_size, hidden_size)
+        else:
+            self.proj = nn.Linear(hidden_size, out_emb_size)
 
-    def forward(self, batch_token_ids, batch_seq_len) -> torch.Tensor:
+    def forward(self, batch_token_ids, batch_seq_len, batch_pos_embed=None) -> torch.Tensor:
         batch_token_ids = self.embedding(batch_token_ids)
         packed_inputs = pack_padded_sequence(batch_token_ids,
                                              batch_seq_len.cpu(),
@@ -37,5 +44,10 @@ class CharLSTM(torch.nn.Module):
         _, (last_layers, _) = self.lstm(packed_inputs)
         last_layers = torch.mean(last_layers, dim=0)
         last_layers = last_layers.squeeze(0)
-        last_layers = self.proj(last_layers)
+        if self.prompt_layers is None:
+            last_layers = self.proj(last_layers)
+            return last_layers
+        assert batch_pos_embed is not None
+        last_layers = self.pos_proj(batch_pos_embed.detach())+last_layers
+        last_layers = self.proj(last_layers)#.view(-1,self.prompt_layers,2,self.out_emb_size)
         return last_layers

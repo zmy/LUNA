@@ -1,7 +1,7 @@
 import torch.nn as nn
 from transformers import BertModel
 
-from number_encoder import NumBed, NumBedConfig
+from number_encoder import NumBed, NumBedConfig,SelfAttention_forward
 from .roberta_num import RobertaNum
 from .util import FFNLayer
 from ..data.data_util import SCALE, OPERATOR_CLASSES_
@@ -18,7 +18,8 @@ class BertNum(RobertaNum):
                  model_name,
                  checkpoint_path,
                  model_dir,
-                 redirect_huggingface_cache
+                 redirect_huggingface_cache,
+                 use_prompt
                  ):
         nn.Module.__init__(self)
         self.encoder = BertModel.from_pretrained('bert-base-uncased',
@@ -29,7 +30,8 @@ class BertNum(RobertaNum):
         if self.use_numbed:
             number_model_config = NumBedConfig(model_name=model_name,
                                                encoder_name='TaPas',
-                                               checkpoint_path=checkpoint_path)
+                                               checkpoint_path=checkpoint_path,
+                                               prompt_layers=None if not use_prompt else 12)
             self.numbed = NumBed(number_model_config)
         # operator predictor
         self.operator_predictor = FFNLayer(hidden_size, hidden_size, len(OPERATOR_CLASSES_), dropout_prob)
@@ -46,3 +48,5 @@ class BertNum(RobertaNum):
         self._metrics = TaTQAEmAndF1()
         self.tokenizer = tokenizer
         self.use_newtag = use_newtag
+        self.use_prompt = use_prompt
+

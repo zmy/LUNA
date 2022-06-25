@@ -1,8 +1,8 @@
 import torch
-import torchsort
 import torch.nn as nn
 
 def spearmanr(pred, target, mask):
+    import torchsort
     if mask.sum().item()==0:
         return torch.tensor(1.0).to(pred)
     pred = torchsort.soft_rank(pred)[mask]

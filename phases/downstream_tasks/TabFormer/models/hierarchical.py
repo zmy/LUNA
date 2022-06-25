@@ -7,7 +7,7 @@ from number_encoder import NumBed
 class TabFormerConcatEmbeddings(nn.Module):
     """TabFormerConcatEmbeddings: Embeds tabular data of categorical variables
 
-        Notes: - All column entries must be integer indices in a vocabolary that is common across columns
+        Notes: - All column entries must be integer indices in a vocabulary that is common across columns
                - `sparse=True` in `nn.Embedding` speeds up gradient computation for large vocabs
 
         Args:
@@ -43,7 +43,7 @@ class TabFormerConcatEmbeddings(nn.Module):
 class TabFormerEmbeddings(nn.Module):
     """TabFormerEmbeddings: Embeds tabular data of categorical variables
 
-        Notes: - All column entries must be integer indices in a vocabolary that is common across columns
+        Notes: - All column entries must be integer indices in a vocabulary that is common across columns
 
         Args:
             config.ncols
@@ -92,7 +92,7 @@ class TabFormerEmbeddings(nn.Module):
 
 
 class NumNetTabFormerEmbeddings(nn.Module):
-    """TabFormerEmbeddings: Embeds tabular data of categorical variables
+    """NumNetTabFormerEmbeddings: Embeds tabular data of categorical variables with
 
         Notes: - All column entries must be integer indices in a vocabolary that is common across columns
 
@@ -102,6 +102,9 @@ class NumNetTabFormerEmbeddings(nn.Module):
             config.vocab_size
             config.hidden_size
             config.field_hidden_size
+
+            number_model_config: Configuration for NumBed
+            mlm_probability
 
         Inputs:
             - **input** (batch, seq_len, ncols): tensor of batch of sequences of rows
@@ -128,6 +131,7 @@ class NumNetTabFormerEmbeddings(nn.Module):
                                             padding_idx=getattr(config, 'pad_token_id', 0), sparse=False)
         self.use_replace = config.use_replace
         self.num_id = config.vocab_size
+
         self.number_model = NumBed(number_model_config)
 
         encoder_layer = nn.TransformerEncoderLayer(d_model=config.field_hidden_size, nhead=config.nhead,
@@ -137,11 +141,22 @@ class NumNetTabFormerEmbeddings(nn.Module):
         self.lin_proj = nn.Linear(config.field_hidden_size * config.ncols, config.hidden_size)
 
     def forward(self, input_ids, tokenized_number, mlm=True):
-        """For Fraudulent Dataset, we extract raw numbers in columns 'Time', 'Amount', 'Zip', 'MCC'.
-        For PRSA Dataset, we extract raw numbers in columns 'Time', 'SO2', 'NO2', 'CO', 'O3', 'TEMP',
-        'PRES', 'DEWP', 'RAIN', 'WSPM'.
+        """
+            Inputs:
+                - input_ids: used to fetch world embeddings.
+                - tokenized_number: used to fetch tokenized_number.
+
+                    For CrediTrans Dataset, we extract raw numbers in columns 'Time', 'Amount', 'Zip', 'MCC'.
+                    For PRSA Dataset, we extract raw numbers in columns 'Time', 'SO2', 'NO2', 'CO', 'O3', 'TEMP',
+                        'PRES', 'DEWP', 'RAIN', 'WSPM'.
+
+                - mlm: if True, do masking on embeddings for mask language model pretraining.
+            Outputs:
+                If mlm is True, (embedded rows, masked_indices),
+                If mlm is False, embedded rows.
         """
         if self.use_replace:
+            # Replace option: directly replace column tokens in numerical column with [NUM].
             new_input_ids = input_ids.clone()
             if self.data_type == 'card':
                 new_input_ids[:, :, [2, 3, 8, 9]] = self.num_id
@@ -150,6 +165,7 @@ class NumNetTabFormerEmbeddings(nn.Module):
             else:
                 raise NotImplementedError
         else:
+            # AddBack option: keep the original column tokens.
             new_input_ids = input_ids
         inputs_embeds = self.word_embeddings(new_input_ids)
         number_embeds = self.number_model(tokenized_number)

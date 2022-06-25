@@ -190,7 +190,35 @@ ATTR_CONFIGS = {
     'TutaFeat_9M_large': {
         'model_name': 'TutaFeat',
         'hidden_size': 2176
-    }
+    },
+
+    # For TabFormer
+    'CharLSTM_9M_base_for_tabformer': {  # Around 10% of TabFormer parameters.
+        'encoder_name': 'TabFormer',
+        'out_emb_size': 64,
+        'model_name': 'CharLSTM',
+        'hidden_size': 196,
+        'lstm_num_layers': 9,
+        'bidrectional': True
+    },
+    'CharLSTM_1M_base_for_tabformer': {  # Around 1% of TabFormer parameters.
+        'encoder_name': 'TabFormer',
+        'out_emb_size': 64,
+        'model_name': 'CharLSTM',
+        'hidden_size': 112,
+        'lstm_num_layers': 3,
+        'bidrectional': True
+    },
+    'CharLSTM_100K_base_for_tabformer': {  # Around 0.1% of TabFormer parameters.
+        'encoder_name': 'TabFormer',
+        'out_emb_size': 64,
+        'model_name': 'CharLSTM',
+        'hidden_size': 32,
+        'lstm_num_layers': 3,
+        'bidrectional': True
+    },
+
+
 }
 
 MODEL_NAMES = ATTR_CONFIGS.keys()
@@ -223,7 +251,8 @@ class NumBedConfig:
                  aligned: bool = False,
                  use_layer_norm: bool = False,
                  align_with_orig: bool = False,
-                 out_emb_size: int = 768):
+                 out_emb_size: int = 768,
+                 prompt_layers = None):
         """[summary]
 
         :param model_name: [description]
@@ -308,12 +337,15 @@ class NumBedConfig:
         self.align_with_orig = align_with_orig
         self.hidden_size = hidden_size
         self.out_emb_size = out_emb_size
+        self.prompt_layers = prompt_layers
 
         if model_name in MODEL_NAMES:
             self.from_existing(model_name)
 
     def from_existing(self, model_name: str = 'TransPos'):
 
+        # Some legacy code, should be removed when the names
+        # 'CharLSTM_base' and 'CharLSTM_large' are ditched.
         if model_name.split('_')[-1] == 'base':
             assert self.encoder_name in ['TaPas', 'BERT']
         if model_name.split('_')[-1] == 'large':

@@ -15,6 +15,9 @@ class NumBed(nn.Module):
     def __init__(self, config: NumBedConfig):
         super(NumBed, self).__init__()
         assert config.model_name is not None
+        if config.prompt_layers is not None:
+            assert config.model_name in {'CharLSTM','TransPos'}
+        self.allow_non_param_keys=()
         if config.model_name == 'CharLSTM':
             self.model = CharLSTM(
                 model_id=config.get_model_id(),
@@ -23,9 +26,11 @@ class NumBed(nn.Module):
                 lstm_num_layers=config.lstm_num_layers,
                 bidirectional=config.bidirectional,
                 preprocess_type=config.preprocess_type,
+                prompt_layers=config.prompt_layers,
             )
             print('Built CharLSTM model! Number of parameters: ', num_params(self.model))
             self.param_keys = ('batch_token_ids', 'batch_seq_len')
+            self.allow_non_param_keys = ('batch_pos_embed',)
 
         elif config.model_name == 'Hybrid':
             self.model = Hybrid(
@@ -36,7 +41,7 @@ class NumBed(nn.Module):
                 preprocess_type=config.preprocess_type,
                 value_ratio=config.value_ratio,
                 mix=config.mix,
-                aligned=config.aligned
+                aligned=config.aligned,
             )
             print('Built Hybrid model! Number of parameters: ', num_params(self.model))
             self.param_keys = ('batch_token_ids', 'batch_seq_len',
@@ -67,9 +72,11 @@ class NumBed(nn.Module):
                                            transformer_num_layers=config.transformer_num_layers,
                                            transformer_nhead=config.transformer_nhead,
                                            direct_average=config.direct_average,
-                                           out_emb_size=config.out_emb_size)
+                                           out_emb_size=config.out_emb_size,
+                                           prompt_layers=config.prompt_layers,)
             print('Built TransPos model! Number of parameters: ', num_params(self.model))
             self.param_keys = ('batch_token_ids', 'batch_digit_mapping')
+            self.allow_non_param_keys = ('batch_pos_embed',)
 
         elif config.model_name == 'Streal':
             self.model = StrealEmbedding(hidden_size=config.hidden_size,
@@ -121,7 +128,9 @@ class NumBed(nn.Module):
         # pass in corresponding parameters from input dict to produce embs.
         if len(input_dict) == 0:
             return torch.zeros(0, self.emb_size, device=self.dummy_param.device)
-        out = self.model(**{key: input_dict[key] for key in self.param_keys})
+        new_input_dict={key: input_dict[key] for key in self.param_keys}
+        new_input_dict.update({key: input_dict.get(key,None) for key in self.allow_non_param_keys})
+        out = self.model(**new_input_dict)
 
         # Posprocessing to the backbone output
         if self.aligned:
@@ -145,6 +154,26 @@ class NumBed(nn.Module):
             if len(embs.shape) == 1:
                 embs = embs.view(1, -1)
             return self.layernorm(embs) if self.use_layer_norm else embs
+
+    def prompting(self, input_ids: torch.LongTensor, numtok_dict: Dict, num_token_id: int) -> Optional[torch.Tensor]:
+        if len(numtok_dict) == 0:
+            return None
+
+        num_cnt = numtok_dict['batch_token_ids'].shape[0]
+        num_embed = self(numtok_dict)
+        sample_num=(input_ids==num_token_id).sum(1).cpu().numpy()
+        sample_max=sample_num.max()
+        import numpy as np
+        prompt=np.full((sample_num.shape[0],sample_max),sample_num.sum(),dtype=np.int64)
+        of_set=0
+        for i in range(sample_num.shape[0]):
+            prompt[i,:sample_num[i]]=list(range(of_set,of_set+sample_num[i]))
+            of_set+=sample_num[i]
+        prompt_mask=torch.from_numpy(prompt!=sample_num.sum()).to(input_ids)
+        prompt=torch.from_numpy(prompt).to(input_ids)
+        num_embed = torch.cat((num_embed,torch.zeros(1, *(num_embed.size()[1:])).to(num_embed)), dim=0)
+        prompt = F.embedding(prompt, num_embed)
+        return prompt,prompt_mask
 
     def embedding(self, input_ids: torch.LongTensor, numtok_dict: Dict, num_token_id: int) -> Optional[torch.Tensor]:
         if len(numtok_dict) == 0:

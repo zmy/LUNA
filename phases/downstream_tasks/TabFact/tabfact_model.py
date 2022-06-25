@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from transformers import TapasForSequenceClassification, RobertaForSequenceClassification, BertForSequenceClassification
 import os
-from number_encoder.numbed import NumBed, NumBedConfig
+from number_encoder import NumBed, NumBedConfig,SelfAttention_forward
 from number_tokenizer.numtok import NumTok
 from number_encoder.sembed import SemBed
 
@@ -33,11 +33,13 @@ class TabFactModel(nn.Module):
                 self.sembed = SemBed('BERT')
         self.encoder.resize_token_embeddings(len(tokenizer))
         self.use_numbed = args.model_name != 'zero'
+        self.use_prompt=args.use_numtok==3
         if self.use_numbed:
-            number_model_config = NumBedConfig(model_name=args.model_name,
+            self.number_model_config = NumBedConfig(model_name=args.model_name,
                                                encoder_name='RoBERTa' if args.encoder == 'roberta' else 'TaPas',
-                                               checkpoint_path=args.checkpoint_path)
-            self.number_model = NumBed(number_model_config)
+                                               checkpoint_path=args.checkpoint_path,
+                                               prompt_layers=None if not self.use_prompt else (24 if args.encoder == 'roberta' else 12))
+            self.number_model = NumBed(self.number_model_config)
         self.h_dim = 768 if args.encoder in {'tapas', 'bert'} else 1024
         self.backbone = args.encoder
         if args.kept_keys == '':
@@ -50,35 +52,45 @@ class TabFactModel(nn.Module):
             token_type_ids = torch.zeros_like(input_ids)
         text_embedding = getattr(self.encoder, self.backbone).embeddings.word_embeddings(input_ids)
         input_embedding = text_embedding
+        origin_forward = []
         if self.use_numbed:
-            batch_number_emb = []
+            all_numbers = []
             for _number_list in number_list:
                 if _number_list == '':
                     continue
-                else:
-                    numbers = [(x, None, None) for x in _number_list.split('#')]
-                    token = NumTok.tokenize(numbers, input_ids.device, self.kept_keys)
-                    semantics = self.sembed(_number_list.split('#'), input_ids.device,
-                                            self.encoder) if self.use_sembed else {}
-                    embed = self.number_model({**token, **semantics})
-                batch_number_emb.append(embed)
-            if len(batch_number_emb) > 0:
-                _num_embedding = torch.cat(batch_number_emb, axis=0)
-            else:
-                _num_embedding = torch.zeros(0, self.h_dim).to(input_ids.device)
+                all_numbers.extend([(x, None, None) for x in _number_list.split('#')])
 
-            num_embedding = torch.cat((torch.zeros((1, self.h_dim)).to(_num_embedding), _num_embedding), axis=0)
-            num_id = torch.zeros_like(input_ids)
-            num_indice = input_ids == self.tokenizer.num_token_id
-            if _num_embedding.size(0) > 0:
-                num_id[num_indice] = torch.range(1, _num_embedding.size(0)).to(input_ids)
-            num_embedding = F.embedding(num_id, num_embedding)
-            input_embedding = input_embedding + num_embedding
+            token = NumTok.tokenize(all_numbers, input_ids.device, self.kept_keys)
+            semantics = self.sembed([x[0] for x in all_numbers], input_ids.device,
+                                    self.encoder) if self.use_sembed and len(all_numbers)>0 else {}
+            numtok_dict={**token, **semantics}
+            if self.use_prompt:
+                if len(all_numbers) != 0:
+                    attention_mask[input_ids==self.tokenizer.num_token_id]=0
+                    batch_pos_id = torch.where(input_ids == self.tokenizer.num_token_id)[1]
+                    numtok_dict['batch_pos_embed']=getattr(self.encoder, self.backbone).embeddings.position_embeddings(batch_pos_id)
+                    num_prompt,prompt_mask = self.number_model.prompting(input_ids, numtok_dict, self.tokenizer.num_token_id)
+                    num_prompt=num_prompt.view(*(num_prompt.size()[:2]),self.number_model_config.prompt_layers,2,-1)
+                    num_prompt=num_prompt[:,:self.args.max_prompt_len]
+                    prompt_mask=prompt_mask[:,:self.args.max_prompt_len]
+                    for i in range(len(getattr(self.encoder, self.backbone).encoder.layer)):
+                        _self=getattr(self.encoder, self.backbone).encoder.layer[i].attention.self
+                        origin_forward.append(_self.forward)
+                        _self.forward = lambda *args,**kwargs: SelfAttention_forward(_self,*args,
+                                                                                      number_prompt=num_prompt[:,:,i],
+                                                                                      number_prompt_mask=prompt_mask,
+                                                                                      **kwargs)
+            elif len(all_numbers) != 0:
+                input_embedding = input_embedding + self.number_model.embedding(input_ids, numtok_dict, self.tokenizer.num_token_id)
 
         # forward pass
         outputs = self.encoder(inputs_embeds=input_embedding, attention_mask=attention_mask,
                                token_type_ids=token_type_ids, return_dict=True,
                                labels=label)
+        if len(origin_forward)>0:
+            for i in range(len(getattr(self.encoder, self.backbone).encoder.layer)):
+                _self = getattr(self.encoder, self.backbone).encoder.layer[i].attention.self
+                _self.forward = origin_forward[i]
 
         loss = outputs.loss
 

@@ -1,0 +1,17 @@
+encoder: bert
+step_size: 23
+epochs: 4
+batch_size: 3
+gradient_accumulation_steps: 4
+mlm_probability: 0.15
+momentum: 0.995
+alpha: 0.4
+max_seq_length: 400
+numbed_model: CharLSTM_base
+numbed_ckpt: data/ckpt/numbed-ckpt/CharLSTM_base.pt
+save_by_epochs: 4
+optimizer: {lr: 1e-4, weight_decay: 0.02}
+schedular: {T_0: 29, T_mult: 2, eta_min: 2e-5}
+warm_up_steps: 167
+
+dataset_dir: [data/PretrainDataset/small]

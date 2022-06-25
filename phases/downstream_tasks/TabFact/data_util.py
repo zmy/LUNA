@@ -31,7 +31,7 @@ def roberta_string_tokenize(string, tokenizer, use_numtok):
     if use_numtok == 1:
         new_text, number_triplets = NumTok.replace_numbers(string, do_lower_case=False)  # NEWLY ADDED SECTION
         number_strings = [t[0] for t in number_triplets]
-    elif use_numtok == 2:
+    elif use_numtok >= 2:
         new_text, number_triplets = NumTok.replace_numbers(string, do_lower_case=False, keep_origin=1)  # NEWLY ADDED SECTION
         number_strings = [t[0] for t in number_triplets]
     else:

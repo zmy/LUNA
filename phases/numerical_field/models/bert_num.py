@@ -24,7 +24,8 @@ class BertNum(RobertaNum):
         if self.use_numbed:
             number_model_config = NumBedConfig(model_name=config['numbed_model'], \
                                                encoder_name='TaPas', \
-                                               checkpoint_path=config['numbed_ckpt'])
+                                               checkpoint_path=config['numbed_ckpt'],
+                                               prompt_layers=None if not config['use_prompt'] else 12)
             self.number_model = NumBed(number_model_config)
             self.number_proj = nn.Sequential()
         self.backbone = 'bert'

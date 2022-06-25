@@ -2,7 +2,7 @@ import os
 from tqdm import tqdm
 import json
 from collections import defaultdict
-input_dir=r"your\path\to\NumberDataset"
+input_dir=r"<your raw data path>"
 table_id=0
 text_id=0
 tables={}

@@ -152,6 +152,7 @@ class TabFormerBertForMaskedLM(BertForMaskedLM):
         bsz, window_size = sequence_output.size(0), sequence_output.size(1)
         if masked_lm_labels is None:
             # If masked_lm_labels not given, use the model as a feature extractor and return the row embedding.
+            # The extracted features will be used in TabFormer downstream tasks.
             return sequence_output
 
         if not self.config.flatten:
@@ -197,7 +198,7 @@ class TabFormerBertForMaskedLM(BertForMaskedLM):
             masked_lm_labels = masked_lm_labels.view(expected_sz[0], -1)
 
         seq_len = prediction_scores.size(1)
-        # TODO : remove_target is True for card
+
         field_names = self.vocab.get_field_keys(remove_target=True, ignore_special=False)
         for field_idx, field_name in enumerate(field_names):
             col_ids = list(range(field_idx, seq_len, len(field_names)))

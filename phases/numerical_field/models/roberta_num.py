@@ -12,10 +12,10 @@ import torch.nn.functional as F
 from torch import nn
 from transformers import RobertaForMaskedLM
 
-from number_encoder.numbed import NumBed, NumBedConfig
+from number_encoder import NumBed, NumBedConfig,SelfAttention_forward
 from number_tokenizer.numtok import NumTok
 from .utils import spearmanr, FFNLayer
-
+import os
 
 class RobertaNum(nn.Module):
     def __init__(self, config, tokenizer):
@@ -46,20 +46,28 @@ class RobertaNum(nn.Module):
             self.kept_keys = ()
         else:
             self.kept_keys = config['kept_keys'].split(',')
+        self.use_prompt = config['use_prompt']
 
     def build_model(self, config, tokenizer):
-        self.encoder = RobertaForMaskedLM.from_pretrained('data/ckpt/roberta.large')
+        if os.path.exists('/storage/tuna-models/roberta.large'):
+            roberta_path='/storage/tuna-models/roberta.large'
+        elif os.path.exists('data/ckpt/roberta.large'):
+            roberta_path='data/ckpt/roberta.large'
+        else:
+            raise NotImplementedError
+        self.encoder = RobertaForMaskedLM.from_pretrained(roberta_path)
         self.encoder.resize_token_embeddings(len(tokenizer))
         # create momentum models
-        self.encoder_m = RobertaForMaskedLM.from_pretrained('data/ckpt/roberta.large')
+        self.encoder_m = RobertaForMaskedLM.from_pretrained(roberta_path)
         self.encoder_m.resize_token_embeddings(len(tokenizer))
         self.model_pairs = [[self.encoder, self.encoder_m]]
         self.copy_params()
         if self.use_numbed:
-            number_model_config = NumBedConfig(model_name=config['numbed_model'], \
+            self.number_model_config = NumBedConfig(model_name=config['numbed_model'], \
                                                encoder_name='RoBERTa', \
-                                               checkpoint_path=config['numbed_ckpt'])
-            self.number_model = NumBed(number_model_config)
+                                               checkpoint_path=config['numbed_ckpt'],
+                                               prompt_layers=None if not config['use_prompt'] else 24)
+            self.number_model = NumBed(self.number_model_config)
             self.number_proj = nn.Sequential()
         self.backbone = 'roberta'
         self.hidden_size = 1024
@@ -83,25 +91,38 @@ class RobertaNum(nn.Module):
             column_ids = token_type_ids[..., 1]
             if self.backbone == 'bert':
                 token_type_ids = token_type_ids[..., 0]
+
         word_embedding = getattr(self.encoder, self.backbone).embeddings.word_embeddings(input_ids)
         num_id = torch.zeros_like(input_ids)
         num_indice = input_ids == self.tokenizer.num_token_id
+        origin_forward = []
         if len(number_list) > 0:
             num_id[num_indice] = torch.range(1, len(number_list)).to(input_ids)
             if self.use_numbed:
                 tokenized = NumTok.tokenize([(x[0], None, None) for x in number_list], input_ids.device, self.kept_keys)
-                num_embedding = self.number_model(tokenized)
-                num_embedding = self.number_proj(num_embedding)
-                num_embedding = torch.cat((torch.zeros((1, self.hidden_size)).to(num_embedding), num_embedding), axis=0)
-                num_embedding = F.embedding(num_id, num_embedding)
-                input_embedding = word_embedding + num_embedding
+                if self.use_prompt:
+                    attention_mask[input_ids == self.tokenizer.num_token_id] = 0
+                    batch_pos_id = torch.where(input_ids == self.tokenizer.num_token_id)[1]
+                    tokenized['batch_pos_embed'] = getattr(self.encoder, self.backbone).embeddings.position_embeddings(batch_pos_id)
+                    num_prompt, prompt_mask = self.number_model.prompting(input_ids, tokenized, self.tokenizer.num_token_id)
+                    num_prompt = num_prompt.view(*(num_prompt.size()[:2]), self.number_model_config.prompt_layers, 2, -1)
+                    for i in range(len(getattr(self.encoder, self.backbone).encoder.layer)):
+                        _self = getattr(self.encoder, self.backbone).encoder.layer[i].attention.self
+                        origin_forward.append(_self.forward)
+                        _self.forward = lambda *args, **kwargs: SelfAttention_forward(_self, *args,
+                                                                                      number_prompt=num_prompt[:, :, i],
+                                                                                      number_prompt_mask=prompt_mask,
+                                                                                      **kwargs)
+                    input_embedding = word_embedding
+                else:
+                    num_embedding = self.number_model.embedding(input_ids, tokenized, self.tokenizer.num_token_id)
+                    input_embedding = word_embedding + num_embedding
             else:
                 input_embedding = word_embedding
         else:
             input_embedding = word_embedding
         mask_embedding, masked_indice = self.mask(input_ids, input_embedding,
                                                   getattr(self.encoder, self.backbone).embeddings.word_embeddings)
-
         # get momentum features
         with torch.no_grad():
             self._momentum_update()
@@ -116,10 +137,6 @@ class RobertaNum(nn.Module):
                                   return_dict=True,
                                   output_hidden_states=True)
 
-        output = getattr(self.encoder, self.backbone)(inputs_embeds=input_embedding,
-                                                      attention_mask=attention_mask,
-                                                      token_type_ids=token_type_ids,
-                                                      return_dict=True)
         # ===distillation loss===
 
         soft_label = F.softmax(mlm_output_m.logits[masked_indice], dim=-1)  # K,C
@@ -155,6 +172,10 @@ class RobertaNum(nn.Module):
 
         # ===distribution===
         if self.use_distrib:
+            output = getattr(self.encoder, self.backbone)(inputs_embeds=input_embedding,
+                                                          attention_mask=attention_mask,
+                                                          token_type_ids=token_type_ids,
+                                                          return_dict=True)
             col_ids = column_ids
             dist_indice = (col_ids <= 50) & (col_ids > 0)
             dist_logits = output.last_hidden_state[dist_indice]  # K,D
@@ -220,6 +241,12 @@ class RobertaNum(nn.Module):
                 loss_distrib = loss_distrib + loss_rank
         else:
             loss_distrib = torch.tensor(0.0).to(input_embedding)
+
+        if len(origin_forward)>0:
+            for i in range(len(getattr(self.encoder, self.backbone).encoder.layer)):
+                _self = getattr(self.encoder, self.backbone).encoder.layer[i].attention.self
+                _self.forward = origin_forward[i]
+
         return loss_distill, loss_mlm, loss_distrib
 
     @torch.no_grad()
@@ -241,6 +268,8 @@ class RobertaNum(nn.Module):
 
         masked_indices[input_ids == self.tokenizer.pad_token_id] = False
         masked_indices[input_ids == self.tokenizer.cls_token_id] = False
+        if self.use_prompt:
+            masked_indices[input_ids == self.tokenizer.num_token_id]=False
 
         # 80% of the time, we replace masked input tokens with tokenizer.mask_token ([MASK])
         indices_replaced = torch.bernoulli(

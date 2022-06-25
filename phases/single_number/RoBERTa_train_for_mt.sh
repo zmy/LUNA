@@ -1,0 +1,17 @@
+python -m phases.single_number.phase0 \
+--model_name RoBERTa \
+--model_suffix='' \
+--preprocess_type trivial \
+--mode sigexp \
+--objs single double multi \
+--evals single double multi \
+--epoch_num 30 \
+--batch_size 256 \
+--lr 1e-3 \
+--dataset_name sampled \
+--listmax_dataset_name sampled \
+--emb_size 1024 \
+--lstm_num_layers 3 \
+--seed 42 \
+--device 2 \
+--exp_root exp
